@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
 data/*.json
 data/*.csv
 .env

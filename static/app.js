@@ -181,7 +181,7 @@ function betsTable(g) {
     const tr = document.createElement("tr");
     if ((b.take || b.core || b.locked) && b.status !== "void-early") tr.className = "take";
     const st = b.status || "live";
-    const stClass = st === "ganada" ? "won" : st === "perdida" ? "lost" : "";
+    const stClass = st.includes("ganada") || st.includes("ganado") ? "won" : (st.includes("perdida") || st.includes("perdido") ? "lost" : "");
     const cells = [
       b.note || b.kind,
       b.selection,

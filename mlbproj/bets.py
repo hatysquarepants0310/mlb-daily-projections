@@ -333,11 +333,17 @@ def unique_picks(rows: list[dict]) -> list[dict]:
         if prev is None:
             chosen[kind] = r
             continue
-        # prefer take (edge) over core; then higher edge
         r_rank = (1 if r.get("take") else 0, r.get("edge") or 0)
         p_rank = (1 if prev.get("take") else 0, prev.get("edge") or 0)
         if r_rank > p_rank:
             chosen[kind] = r
+    by_kind: dict[str, list[dict]] = {}
+    for r in rows:
+        by_kind.setdefault(r["kind"], []).append(r)
+    for kind, group in by_kind.items():
+        if kind in chosen:
+            continue
+        chosen[kind] = max(group, key=lambda x: (x.get("model_p") or 0, x.get("edge") or 0))
     return [chosen[k] for k in ("ml", "total", "nrfi", "spread") if k in chosen]
 
 
@@ -477,6 +483,14 @@ def enrich(payload: dict, *, record_ticks: bool = False) -> dict:
             else:
                 q["status"] = "sin-lock"
                 q["note"] = (q.get("note") or "") + " · no lock (fuera de T-10)"
+                if final and ls is not None:
+                    won = grade(q.get("settle") or {}, ls)
+                    if won is True:
+                        q["paper"] = "ganada"
+                        q["status"] = "sin-lock · hubiera ganado"
+                    elif won is False:
+                        q["paper"] = "perdida"
+                        q["status"] = "sin-lock · hubiera perdido"
             out.append(q)
         g["bets"] = out
         g["bets_note"] = clock["label"] + ". Un lado por mercado. Ledger append-only. No hay orden a Polymarket."

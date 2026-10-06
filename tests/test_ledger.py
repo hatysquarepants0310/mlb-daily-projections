@@ -42,6 +42,16 @@ class UniquePicksTests(unittest.TestCase):
         self.assertEqual(mls, ["Yankees"])
         self.assertEqual(tots, ["Over"])
 
+    def test_fallback_when_book_is_settled(self):
+        from mlbproj.bets import unique_picks
+
+        rows = [
+            {"kind": "ml", "selection": "Yankees", "take": False, "core": False, "edge": -0.4, "model_p": 0.58},
+            {"kind": "ml", "selection": "Rays", "take": False, "core": False, "edge": 0.4, "model_p": 0.42},
+        ]
+        u = unique_picks(rows)
+        self.assertEqual([r["selection"] for r in u], ["Yankees"])
+
 
 class LockWindowTests(unittest.TestCase):
     def test_t_minus_10(self):

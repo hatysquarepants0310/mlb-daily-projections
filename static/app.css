@@ -29,6 +29,17 @@ button:hover { border-color: var(--acc); }
 .game { margin: 18px 24px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .game h2 { margin: 0; padding: 14px 16px; font-size: 16px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .wx { color: var(--dim); font-weight: 400; font-size: 12px; }
+.lamp {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; letter-spacing: .02em;
+}
+.lamp .dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: currentColor; box-shadow: 0 0 8px currentColor;
+}
+.lamp-listo { color: var(--acc); }
+.lamp-parcial { color: var(--warn); }
+.lamp-esperando { color: var(--hot); }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { padding: 6px 8px; text-align: right; border-top: 1px solid var(--line); }
 th { color: var(--dim); font-weight: 600; font-size: 11px; cursor: pointer; }

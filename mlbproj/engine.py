@@ -153,6 +153,14 @@ def _pick_pitcher_split(splits: dict[str, dict[str, float]], batter_bats: str, p
     return season
 
 
+def weather_observed(game: dict[str, Any]) -> bool:
+    w = game.get("weather") or {}
+    temp = w.get("temp")
+    if temp is None or temp == "":
+        return False
+    return bool(w.get("wind") or w.get("condition"))
+
+
 def _weather(game: dict[str, Any]) -> dict[str, Any]:
     w = game.get("weather") or {}
     temp = to_f(w.get("temp"), 70.0)
@@ -162,6 +170,50 @@ def _weather(game: dict[str, Any]) -> dict[str, Any]:
         "temp": temp,
         "wind": wind,
         "hr_mult": round(weather_hr_mult(temp, wind), 3),
+        "observed": weather_observed(game),
+    }
+
+
+_INPUT_LABELS = {
+    "sp_away": "SP visitante",
+    "sp_home": "SP local",
+    "lineup_away": "lineup visitante",
+    "lineup_home": "lineup local",
+    "weather": "weather",
+}
+
+
+def inputs_status(
+    *,
+    sp_away: bool,
+    sp_home: bool,
+    lineup_away: bool,
+    lineup_home: bool,
+    weather: bool,
+) -> dict[str, Any]:
+    checks = {
+        "sp_away": bool(sp_away),
+        "sp_home": bool(sp_home),
+        "lineup_away": bool(lineup_away),
+        "lineup_home": bool(lineup_home),
+        "weather": bool(weather),
+    }
+    missing = [k for k, v in checks.items() if not v]
+    if not missing:
+        state = "listo"
+        label = "Listo: lineup + SP + weather"
+    elif any(checks.values()):
+        state = "parcial"
+        label = "Esperando: " + ", ".join(_INPUT_LABELS[k] for k in missing)
+    else:
+        state = "esperando"
+        label = "Esperando: lineup + SP + weather"
+    return {
+        "ready": not missing,
+        "state": state,
+        "checks": checks,
+        "missing": missing,
+        "label": label,
     }
 
 
@@ -402,6 +454,13 @@ def project_date(date_iso: str | None = None, force: bool = False) -> dict[str, 
             home_players, home_abbr, pp_away, away_abbr
         )
         pitchers = [p for p in (away_p, home_p) if p]
+        inputs = inputs_status(
+            sp_away=bool(pp_away.get("id")),
+            sp_home=bool(pp_home.get("id")),
+            lineup_away=len(away_players) >= 9,
+            lineup_home=len(home_players) >= 9,
+            weather=bool(weather.get("observed")),
+        )
         games_out.append(
             {
                 "gamePk": g.get("gamePk"),
@@ -414,6 +473,7 @@ def project_date(date_iso: str | None = None, force: bool = False) -> dict[str, 
                 "home": {"name": home.get("name"), "abbr": home_abbr, "id": home.get("id")},
                 "batters": batters,
                 "pitchers": pitchers,
+                "inputs": inputs,
             }
         )
 

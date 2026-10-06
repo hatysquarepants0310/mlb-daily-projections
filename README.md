@@ -16,6 +16,8 @@ The 2017 Hart repo (Python 2.7, MySQL, FanGraphs scrape, DraftKings optimizer) i
 
 Apuestas: momio de Polymarket (gamma) por juego (ML, O/U 6.5, -1.5, NRFI). El servicio patea cada 60s: ticks de precio (y CLOB 1h al primer sample) y **lock en T-10** del `gameDate` MLB. Al Final, linescore liquida. Ledger sqlite append-only + hash chain; UPDATE/DELETE abortan. No manda órdenes a Poly.
 
+Foquito por juego (`inputs`): verde = lineup 9+9 + SP ambos + weather observado; ámbar = algo falta; rojo = nada posteado. No es el T-10. Hover muestra qué falta.
+
 ## Honesty
 
 A single MLB game is high variance. Typical MAE on hits is around 0.9–1.1 even for good public systems. `confidence` is sample quality (PA, BF, whether xwOBA and splits exist), not “this will happen.” Intervals are Bernoulli 80%, not magic.

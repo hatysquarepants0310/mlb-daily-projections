@@ -134,8 +134,15 @@ async function load(force) {
     const el = document.createElement("article");
     el.className = "game";
     const wx = g.weather || {};
+    const inp = g.inputs || {};
+    const lampState = inp.state || "esperando";
     el.innerHTML = `<h2>
-      <span>${g.away.abbr} @ ${g.home.abbr} <span class="wx">${g.status} · ${g.venue}</span></span>
+      <span>${g.away.abbr} @ ${g.home.abbr}
+        <span class="lamp lamp-${lampState}" title="${inp.label || "Esperando inputs"}">
+          <span class="dot"></span>${inp.ready ? "Listo" : (lampState === "parcial" ? "Parcial" : "Esperando")}
+        </span>
+        <span class="wx">${g.status} · ${g.venue}</span>
+      </span>
       <span class="wx">${wx.temp || "?"}°F · ${wx.condition || ""} · ${wx.wind || ""} · HR×${wx.hr_mult ?? ""}</span>
     </h2>
     <p class="empty" style="margin:8px 16px">${g.lock_clock?.label || ""} · first pitch ${g.gameDate || "?"}</p>`;

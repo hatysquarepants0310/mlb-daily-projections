@@ -1,57 +1,78 @@
-# MLB Daily Projections
+<p align="center">
+  <img src="docs/hero.png" alt="mlbproj — lock at T-10" width="100%">
+</p>
 
-Daily MLB player projections. Live data, not a 2017 DFS dump.
+<p align="center">
+  <strong>Lock at T-10.</strong> Proyecciones diarias MLB · Log5 × Statcast · momio Polymarket.<br>
+  Un pick por mercado. Ledger append-only. Cero órdenes.
+</p>
 
-Stack:
+<p align="center">
+  <img alt="tests" src="https://github.com/hatysquarepants0310/mlb-daily-projections/actions/workflows/test.yml/badge.svg">
+  <img alt="python" src="https://img.shields.io/badge/python-3.11+-0c0f12?logo=python&logoColor=6ee7b7">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-6ee7b7?labelColor=0c0f12">
+</p>
 
-- MLB Stats API: slate, lineups, probable pitchers, season + vs L/R splits, 21-day recency
-- Baseball Savant expected BA / SLG / wOBA
-- Tango / Marcel shrinkage on every rate
-- Bill James Log5 batter × pitcher
-- Park prior + MLB weather (temp / wind) as HR multiplier
-- Binomial P(H≥1) and P(HR≥1), 80% interval on hits
-- FIP-style pitcher card
+---
 
-The 2017 Hart repo (Python 2.7, MySQL, FanGraphs scrape, DraftKings optimizer) is years dead. Glouberman *MLB-hit-predictor* is a 2014–2019 Beat-the-Streak classifier (weather, venue, next-game hit). This system keeps the parts that still have edge — Log5, platoon, park, weather, P(hit) — and replaces the rest with 2026 public feeds.
+Esto no es un dump de DFS 2017, ni un clasificador Beat-the-Streak, ni un bot que dispara al CLOB. Es un board de investigación: el modelo habla, Polymarket cotiza, y **el take se congela diez minutos antes del `gameDate` de MLB**.
 
-Apuestas: momio de Polymarket (gamma) por juego (ML, O/U 6.5, -1.5, NRFI). El servicio patea cada 60s: ticks de precio (y CLOB 1h al primer sample) y **lock en T-10** del `gameDate` MLB. Al Final, linescore liquida. Ledger sqlite append-only + hash chain; UPDATE/DELETE abortan. No manda órdenes a Poly.
+| El libro | mlbproj |
+|---|---|
+| Lista ambos lados del moneyline | Un lado. El otro no existe en el board |
+| Lock cuando el juego está `Scheduled` | Lock en la ventana `[start−10min, start)` |
+| Reescribe el pick si el modelo se mueve | Payload locked. Evalúa o `void-early` |
+| Confidence = “va a pasar” | Confidence = calidad de muestra (PA, BF, xwOBA, splits) |
 
-Foquito por juego (`inputs`): verde = lineup 9+9 + SP ambos + weather observado; ámbar = algo falta; rojo = nada posteado. No es el T-10. Hover muestra qué falta.
+Si abres el dashboard a las 10am sobre un night game, **no hay lock**. Eso no es un bug.
 
-## Honesty
+## Modelo (un batter, un juego)
 
-A single MLB game is high variance. Typical MAE on hits is around 0.9–1.1 even for good public systems. `confidence` is sample quality (PA, BF, whether xwOBA and splits exist), not “this will happen.” Intervals are Bernoulli 80%, not magic.
+1. Rates de temporada vs la mano que va a ver, encogidos a liga (Tango / Marcel).
+2. Blend de recencia 21 días, ponderado por sample.
+3. Blend Statcast expected (más peso cuando el PA es flaco).
+4. Log5 vs el split del starter (también shrunk).
+5. Park × weather sobre extra-base / HR.
+6. PA por slot de lineup → conteos; R/RBI del run environment.
 
-## Dashboard
+Pitchers: mix de platoon del lineup posteado, IP esperadas por rol, FIP de eventos proyectados. `P(H≥1)` y `P(HR≥1)` binomiales; intervalo 80% Bernoulli.
 
-Binds Tailscale IP only (not `0.0.0.0`):
+Feeds vivos: MLB Stats API (`hydrate=probablePitcher,lineups,weather,venue` + `sitCodes=vl,vr`) y Baseball Savant `expected_statistics`. Nada de MySQL, nada de leaderboards FanGraphs como producto.
+
+## Polymarket
+
+Slug de juego, no `tag_id`. El tag de temporada (WS / MVP) no es este board.
 
 ```
-http://100.118.48.64:8765
+GET https://gamma-api.polymarket.com/events?slug=mlb-{away}-{home}-{YYYY-MM-DD}
 ```
 
-Same URL from haty-home and from tuf-laptop on the tailnet.
+Mercados: ML, total, spread, NRFI. Take in-band `0.18–0.82`, modelo shrunk `≥0.52`, edge `≥3pp`; si no hay edge, el core de ML es el `model_p` más alto in-band.
+
+Al Final, el linescore de MLB liquida una sola vez. INSERT only. Un segundo grade es no-op. Triggers abortan `UPDATE`/`DELETE` en `picks`, `settled` y `ticks`. Un lock fuera de T-10 se queda en disco como `void-early` y no cuenta en hit rate / PnL. Borrarlo para “limpiar” el eval rompe el contrato.
+
+Foquito `inputs` por juego: verde = lineup 9+9 + ambos SP + weather observado. Ámbar = falta algo. Rojo = nada posteado. Hover = lista. No es el reloj de lock.
+
+## Correr
 
 ```bash
-cd /home/haty/mlb-daily-projections
 uv sync
-uv run python -m mlbproj.web
+uv run python -m unittest
+uv run python -m mlbproj.web --host 127.0.0.1 --port 8765
 ```
 
-systemd user unit: `mlbproj.service` (enable with `systemctl --user enable --now mlbproj`).
+```
+GET /api/health
+GET /api/projections?date=YYYY-MM-DD
+GET /api/history
+```
 
-## API
+Bind explícito. No escuches en `0.0.0.0` si el board vive en una máquina de casa. Unit de ejemplo: [`mlbproj.service`](mlbproj.service).
 
-- `GET /api/health`
-- `GET /api/projections?date=YYYY-MM-DD&force=true`
+`data/*.sqlite` (y WAL/SHM) están gitignored. El ledger no es source.
 
-## Model path (one game, one batter)
+## Honestidad
 
-1. Season rates vs the handedness he will see, shrunk to league.
-2. Blend 21-day recency (sample-size weighted).
-3. Blend Statcast expected (more weight when PA is thin).
-4. Log5 vs starter’s matching split (also shrunk).
-5. Park × weather on extra-base/HR rates.
-6. Lineup-slot PA → counting stats, R/RBI from run environment.
+Un juego de MLB es ruido. MAE típico de hits ~0.9–1.1 incluso en sistemas públicos decentes. Los intervalos no son magia. Este repo no promete edge persistente; el ledger existe para ver dónde se rompe.
 
-Pitchers: platoon mix of the posted lineup, expected IP by role, FIP from projected events.
+MIT. 2026.

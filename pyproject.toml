@@ -1,7 +1,7 @@
 [project]
 name = "mlb-daily-projections"
 version = "1.0.0"
-description = "Daily MLB player projections: sabermetrics, Log5 matchups, Statcast xwOBA, shrinkage, weather."
+description = "mlbproj: lock at T-10. Daily MLB Log5 × Statcast vs Polymarket. One pick per market."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

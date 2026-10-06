@@ -11,9 +11,9 @@ SAVANT_EXPECTED = (
     "https://baseballsavant.mlb.com/leaderboard/expected_statistics"
     "?type={kind}&year={year}&min=1&csv=true"
 )
-USER_AGENT = "mlb-daily-projections/1.0 (haty-home; personal research)"
+USER_AGENT = "mlb-daily-projections/1.0 (research; github.com/hatysquarepants0310/mlb-daily-projections)"
 
-HOST = "100.118.48.64"
+HOST = "127.0.0.1"
 PORT = 8765
 
 # Tango-style regression-to-mean priors (PA or BF).

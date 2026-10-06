@@ -1,10 +1,10 @@
 [Unit]
-Description=MLB Daily Projections dashboard
+Description=mlbproj dashboard (bind the host you actually want)
 After=network-online.target
 
 [Service]
-WorkingDirectory=/home/haty/mlb-daily-projections
-ExecStart=/home/haty/mlb-daily-projections/.venv/bin/python -m mlbproj.web --host 100.118.48.64 --port 8765
+WorkingDirectory=%h/mlb-daily-projections
+ExecStart=%h/mlb-daily-projections/.venv/bin/python -m mlbproj.web --host 127.0.0.1 --port 8765
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

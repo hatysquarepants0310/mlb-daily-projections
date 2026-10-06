@@ -1,0 +1,13 @@
+[Unit]
+Description=MLB Daily Projections dashboard
+After=network-online.target
+
+[Service]
+WorkingDirectory=/home/haty/mlb-daily-projections
+ExecStart=/home/haty/mlb-daily-projections/.venv/bin/python -m mlbproj.web --host 100.118.48.64 --port 8765
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,45 @@
+:root {
+  --bg: #0c0f12;
+  --card: #151a20;
+  --line: #2a333e;
+  --txt: #e8edf2;
+  --dim: #8b98a5;
+  --acc: #6ee7b7;
+  --warn: #fbbf24;
+  --hot: #fb7185;
+  --blue: #7dd3fc;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--txt); font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; }
+header {
+  display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between;
+  align-items: flex-end; padding: 20px 24px 8px; border-bottom: 1px solid var(--line);
+}
+h1 { margin: 0; font-size: 22px; letter-spacing: .02em; }
+.sub { margin: 4px 0 0; color: var(--dim); font-size: 12px; }
+#bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+label { color: var(--dim); font-size: 12px; }
+input[type=date], button {
+  background: var(--card); color: var(--txt); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 12px;
+}
+button { cursor: pointer; }
+button:hover { border-color: var(--acc); }
+#honest { margin: 12px 24px; color: var(--dim); font-size: 12px; max-width: 90ch; }
+.game { margin: 18px 24px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.game h2 { margin: 0; padding: 14px 16px; font-size: 16px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.wx { color: var(--dim); font-weight: 400; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 8px; text-align: right; border-top: 1px solid var(--line); }
+th { color: var(--dim); font-weight: 600; font-size: 11px; cursor: pointer; }
+td:nth-child(1), th:nth-child(1),
+td:nth-child(2), th:nth-child(2),
+td:nth-child(3), th:nth-child(3) { text-align: left; }
+.hi { color: var(--acc); }
+.hot { color: var(--hot); }
+.conf { display: inline-block; min-width: 42px; }
+.pills { display: flex; gap: 8px; padding: 0 16px 10px; flex-wrap: wrap; }
+.pill { background: #0c0f12; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--blue); }
+#err { margin: 24px; color: var(--hot); }
+.empty { margin: 24px; color: var(--dim); }
+caption { text-align: left; padding: 10px 16px 4px; color: var(--warn); font-size: 12px; }

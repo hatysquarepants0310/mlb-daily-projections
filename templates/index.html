@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MLB Daily Projections</title>
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>MLB Daily Projections</h1>
+      <p class="sub">Log5 · shrinkage · Statcast xwOBA · park · weather · P(H≥1)</p>
+    </div>
+    <form id="bar">
+      <label>Fecha <input type="date" id="date" /></label>
+      <button type="submit" id="go">Proyectar</button>
+      <button type="button" id="force">Forzar refresh</button>
+      <span id="meta"></span>
+    </form>
+  </header>
+  <p id="honest"></p>
+  <section id="games"></section>
+  <p id="err" hidden></p>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+[project]
+name = "mlb-daily-projections"
+version = "1.0.0"
+description = "Daily MLB player projections: sabermetrics, Log5 matchups, Statcast xwOBA, shrinkage, weather."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "hatysquarepants0310" }]
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+]
+
+[project.scripts]
+mlbproj = "mlbproj.web:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mlbproj"]

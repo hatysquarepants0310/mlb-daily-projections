@@ -155,8 +155,95 @@ async function load(force) {
       p.textContent = "Sin lineups oficiales todavía.";
       el.appendChild(p);
     }
+    el.appendChild(betsTable(g));
     root.appendChild(el);
   }
+  renderHistory(data);
+}
+
+function betsTable(g) {
+  const wrap = document.createElement("div");
+  const cap = document.createElement("caption");
+  const tbl = document.createElement("table");
+  const url = g.poly_url ? ` · <a href="${g.poly_url}" target="_blank" rel="noopener">Polymarket</a>` : "";
+  tbl.innerHTML = `<caption>Apuestas (momio Poly) — ${g.bets_note || ""}${url}</caption>
+  <thead><tr>
+    <th>Mercado</th><th>Lado</th><th>Momio</th><th>Amer</th><th>Poly%</th><th>Modelo</th><th>Edge</th><th>Confiabilidad</th><th>Estado</th>
+  </tr></thead><tbody></tbody>`;
+  const tb = tbl.tBodies[0];
+  for (const b of g.bets || []) {
+    const tr = document.createElement("tr");
+    if (b.take || b.locked) tr.className = "take";
+    const st = b.status || "live";
+    const stClass = st === "ganada" ? "won" : st === "perdida" ? "lost" : "";
+    const cells = [
+      b.note || b.kind,
+      b.selection,
+      fmt(b.momio_decimal, 3),
+      String(b.momio_americano ?? "—"),
+      fmt(100 * b.implied_p, 1) + "%",
+      fmt(100 * b.model_p, 1) + "%",
+      (b.edge >= 0 ? "+" : "") + fmt(100 * b.edge, 1) + " pp",
+      fmt(b.reliability, 1),
+      st,
+    ];
+    cells.forEach((t, i) => {
+      const td = document.createElement("td");
+      td.textContent = t;
+      if (i === 8) td.className = stClass;
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  }
+  if (!(g.bets || []).length) {
+    const p = document.createElement("p");
+    p.className = "empty";
+    p.textContent = g.bets_note || "Sin apuestas Poly.";
+    wrap.appendChild(p);
+    return wrap;
+  }
+  wrap.appendChild(tbl);
+  return wrap;
+}
+
+function renderHistory(data) {
+  const s = data.history_summary || {};
+  $("hist-sum").textContent = s.n_settled
+    ? `Historial locked: ${s.won}–${s.lost} (${Math.round(100 * (s.hit_rate || 0))}% hit) · PnL $100 MXN = ${s.pnl_100mxn} · n_lock ${s.n_locked}`
+    : `Historial locked: ${s.n_locked || 0} picks congelados, 0 liquidados. El lock no se reescribe.`;
+  const root = $("history");
+  root.innerHTML = "";
+  const tbl = document.createElement("table");
+  tbl.innerHTML = `<caption>Ledger append-only (no delete / no update)</caption>
+  <thead><tr><th>Fecha</th><th>Pick</th><th>Momio</th><th>Modelo</th><th>Lock</th><th>Resultado</th></tr></thead><tbody></tbody>`;
+  const tb = tbl.tBodies[0];
+  for (const r of data.history || []) {
+    const tr = document.createElement("tr");
+    const st = r.status || "";
+    const cells = [
+      r.card_date || "",
+      `${r.selection} · ${r.note || r.kind}`,
+      fmt(r.momio_decimal, 3),
+      fmt(100 * r.model_p, 1) + "%",
+      (r.locked_at || "").replace("T", " "),
+      st,
+    ];
+    cells.forEach((t, i) => {
+      const td = document.createElement("td");
+      td.textContent = t;
+      if (i === 5) td.className = st === "ganada" ? "won" : st === "perdida" ? "lost" : "";
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  }
+  if (!(data.history || []).length) {
+    const p = document.createElement("p");
+    p.className = "empty";
+    p.textContent = "Todavía no hay locks. Solo se congelan picks pregame (Scheduled/Pre-Game).";
+    root.appendChild(p);
+    return;
+  }
+  root.appendChild(tbl);
 }
 
 load(false);

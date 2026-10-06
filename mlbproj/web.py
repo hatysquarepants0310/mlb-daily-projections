@@ -6,8 +6,10 @@ from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from mlbproj.bets import enrich
 from mlbproj.config import HOST, PORT, ROOT
 from mlbproj.engine import mlb_today, project_date
+from mlbproj import ledger
 
 app = FastAPI(title="MLB Daily Projections", version="1.0.0")
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
@@ -29,10 +31,15 @@ def projections(
     force: bool = Query(default=False),
 ) -> JSONResponse:
     try:
-        payload = project_date(date, force=force)
+        payload = enrich(project_date(date, force=force))
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
     return JSONResponse(payload)
+
+
+@app.get("/api/history")
+def history() -> dict:
+    return {"ok": True, "summary": ledger.summary(), "rows": ledger.history()}
 
 
 def main() -> None:

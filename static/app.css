@@ -43,3 +43,9 @@ td:nth-child(3), th:nth-child(3) { text-align: left; }
 #err { margin: 24px; color: var(--hot); }
 .empty { margin: 24px; color: var(--dim); }
 caption { text-align: left; padding: 10px 16px 4px; color: var(--warn); font-size: 12px; }
+.take td { background: #10231c; }
+.won { color: var(--acc); }
+.lost { color: var(--hot); }
+#hist-sum { margin: 0 24px 8px; color: var(--blue); font-size: 13px; }
+#history { margin: 18px 24px 40px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+a { color: var(--blue); }

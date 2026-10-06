@@ -14,6 +14,8 @@ Stack:
 
 The 2017 Hart repo (Python 2.7, MySQL, FanGraphs scrape, DraftKings optimizer) is years dead. Glouberman *MLB-hit-predictor* is a 2014–2019 Beat-the-Streak classifier (weather, venue, next-game hit). This system keeps the parts that still have edge — Log5, platoon, park, weather, P(hit) — and replaces the rest with 2026 public feeds.
 
+Apuestas: momio de Polymarket (gamma) por juego (ML, O/U 6.5, -1.5, NRFI). Lock solo en pregame. Ledger sqlite append-only + hash chain; UPDATE/DELETE abortan. No manda órdenes a Poly. Liquidación con linescore MLB.
+
 ## Honesty
 
 A single MLB game is high variance. Typical MAE on hits is around 0.9–1.1 even for good public systems. `confidence` is sample quality (PA, BF, whether xwOBA and splits exist), not “this will happen.” Intervals are Bernoulli 80%, not magic.

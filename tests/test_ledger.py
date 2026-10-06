@@ -3,10 +3,11 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from mlbproj import ledger
-from mlbproj.bets import momio_americano, momio_decimal, p_over, p_win
+from mlbproj.bets import lock_clock, momio_americano, momio_decimal, p_over, p_win
 
 
 class MomioTests(unittest.TestCase):
@@ -23,6 +24,38 @@ class PythagTests(unittest.TestCase):
     def test_better_offense_favored(self):
         self.assertGreater(p_win(5.2, 3.8, True), 0.5)
         self.assertGreater(p_over(6.5, 9.0), 0.5)
+
+
+class UniquePicksTests(unittest.TestCase):
+    def test_one_ml_side(self):
+        from mlbproj.bets import unique_picks
+
+        rows = [
+            {"kind": "ml", "selection": "Yankees", "take": True, "core": False, "edge": 0.05},
+            {"kind": "ml", "selection": "Rays", "take": False, "core": True, "edge": -0.05},
+            {"kind": "total", "selection": "Over", "take": True, "core": False, "edge": 0.04},
+            {"kind": "total", "selection": "Under", "take": False, "core": False, "edge": -0.04},
+        ]
+        u = unique_picks(rows)
+        mls = [r["selection"] for r in u if r["kind"] == "ml"]
+        tots = [r["selection"] for r in u if r["kind"] == "total"]
+        self.assertEqual(mls, ["Yankees"])
+        self.assertEqual(tots, ["Over"])
+
+
+class LockWindowTests(unittest.TestCase):
+    def test_t_minus_10(self):
+        start = datetime(2026, 10, 6, 23, 10, tzinfo=timezone.utc)
+        iso = start.isoformat().replace("+00:00", "Z")
+        early = lock_clock(iso, start - timedelta(minutes=40))
+        self.assertTrue(early["too_early"])
+        self.assertFalse(early["in_lock_window"])
+        win = lock_clock(iso, start - timedelta(minutes=7))
+        self.assertTrue(win["in_lock_window"])
+        self.assertFalse(win["missed"])
+        late = lock_clock(iso, start + timedelta(minutes=1))
+        self.assertTrue(late["missed"])
+        self.assertFalse(late["in_lock_window"])
 
 
 class LedgerTests(unittest.TestCase):

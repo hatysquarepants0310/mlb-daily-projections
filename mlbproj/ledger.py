@@ -66,6 +66,18 @@ def init() -> None:
               BEGIN SELECT RAISE(ABORT, 'settled are immutable'); END;
             CREATE TRIGGER IF NOT EXISTS settled_no_delete BEFORE DELETE ON settled
               BEGIN SELECT RAISE(ABORT, 'settled are immutable'); END;
+            CREATE TABLE IF NOT EXISTS ticks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              tick_key TEXT NOT NULL,
+              game_pk INTEGER NOT NULL,
+              ts TEXT NOT NULL,
+              implied_p REAL NOT NULL,
+              momio_decimal REAL NOT NULL
+            );
+            CREATE TRIGGER IF NOT EXISTS ticks_no_update BEFORE UPDATE ON ticks
+              BEGIN SELECT RAISE(ABORT, 'ticks are immutable'); END;
+            CREATE TRIGGER IF NOT EXISTS ticks_no_delete BEFORE DELETE ON ticks
+              BEGIN SELECT RAISE(ABORT, 'ticks are immutable'); END;
             """
         )
 
@@ -231,3 +243,38 @@ def summary() -> dict:
         "pnl_100mxn": round(pnl, 2),
         "n_locked": len(history()),
     }
+
+
+def add_tick(tick_key: str, game_pk: int, implied_p: float, momio_decimal: float, ts: str | None = None) -> None:
+    init()
+    ts = ts or _now()
+    with db() as conn:
+        last = conn.execute(
+            "SELECT ts, implied_p FROM ticks WHERE tick_key=? ORDER BY id DESC LIMIT 1",
+            (tick_key,),
+        ).fetchone()
+        if last and last["ts"] == ts:
+            return
+        conn.execute(
+            "INSERT INTO ticks(tick_key, game_pk, ts, implied_p, momio_decimal) VALUES (?,?,?,?,?)",
+            (tick_key, int(game_pk), ts, float(implied_p), float(momio_decimal)),
+        )
+
+
+def ticks_for(tick_key: str, limit: int = 48) -> list[dict]:
+    init()
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT ts, implied_p, momio_decimal FROM ticks WHERE tick_key=? ORDER BY id DESC LIMIT ?",
+            (tick_key, limit),
+        ).fetchall()
+    out = [{"ts": r["ts"], "implied_p": r["implied_p"], "momio_decimal": r["momio_decimal"]} for r in rows]
+    out.reverse()
+    return out
+
+
+def tick_count(tick_key: str) -> int:
+    init()
+    with db() as conn:
+        n = conn.execute("SELECT COUNT(*) FROM ticks WHERE tick_key=?", (tick_key,)).fetchone()[0]
+    return int(n)

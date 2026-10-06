@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from mlbproj import api, ledger, poly
@@ -11,7 +12,7 @@ PX_LO = 0.18
 PX_HI = 0.82
 SHRINK = 0.70
 MIN_EDGE = 0.03
-PREGAME = {"scheduled", "pre-game", "pregame", "preview"}
+LOCK_BEFORE = timedelta(minutes=10)
 FINAL = {"final", "game over", "completed"}
 
 
@@ -69,13 +70,52 @@ def _status_key(status: str) -> str:
     return (status or "").strip().lower()
 
 
-def can_lock(status: str) -> bool:
-    return _status_key(status) in PREGAME
-
-
 def is_final(status: str) -> bool:
     s = _status_key(status)
     return s in FINAL or s.startswith("final")
+
+
+def lock_clock(game_date_iso: str | None, now: datetime | None = None) -> dict:
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    if not game_date_iso:
+        return {
+            "start": None,
+            "lock_at": None,
+            "seconds_to_lock": None,
+            "seconds_to_start": None,
+            "in_lock_window": False,
+            "missed": True,
+            "too_early": False,
+            "label": "sin hora de inicio",
+        }
+    start = datetime.fromisoformat(game_date_iso.replace("Z", "+00:00"))
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    lock_open = start - LOCK_BEFORE
+    to_lock = (lock_open - now).total_seconds()
+    to_start = (start - now).total_seconds()
+    in_window = lock_open <= now < start
+    missed = now >= start
+    too_early = now < lock_open
+    if in_window:
+        label = f"ventana T-10 ({int(to_start // 60)} min al first pitch)"
+    elif too_early:
+        m = int(to_lock // 60)
+        label = f"lock automático en {m} min (T-10)"
+    else:
+        label = "ya empezó o ya pasó — no hay lock nuevo"
+    return {
+        "start": start.isoformat(),
+        "lock_at": lock_open.isoformat(),
+        "seconds_to_lock": to_lock,
+        "seconds_to_start": to_start,
+        "in_lock_window": in_window,
+        "missed": missed,
+        "too_early": too_early,
+        "label": label,
+    }
 
 
 def team_runs(game: dict[str, Any]) -> tuple[float, float]:
@@ -275,7 +315,40 @@ def build_quotes(game: dict, date_iso: str, markets: list[dict]) -> list[dict]:
             if r["in_band"] and r["model_shrunk"] >= 0.52 and r["edge"] >= MIN_EDGE:
                 r["take"] = True
                 break
-    return rows
+    ml = [i for i, r in enumerate(rows) if r["kind"] == "ml" and r["in_band"]]
+    if ml:
+        best = max(ml, key=lambda i: rows[i]["model_p"])
+        rows[best]["core"] = True
+    return unique_picks(rows)
+
+
+def unique_picks(rows: list[dict]) -> list[dict]:
+    """Un solo lado por mercado. Nunca Yankees y Rays a la vez."""
+    chosen: dict[str, dict] = {}
+    for r in rows:
+        if not (r.get("take") or r.get("core")):
+            continue
+        kind = r["kind"]
+        prev = chosen.get(kind)
+        if prev is None:
+            chosen[kind] = r
+            continue
+        # prefer take (edge) over core; then higher edge
+        r_rank = (1 if r.get("take") else 0, r.get("edge") or 0)
+        p_rank = (1 if prev.get("take") else 0, prev.get("edge") or 0)
+        if r_rank > p_rank:
+            chosen[kind] = r
+    return [chosen[k] for k in ("ml", "total", "nrfi", "spread") if k in chosen]
+
+
+def locked_in_t10(locked_at: str | None, game_date_iso: str | None) -> bool:
+    if not locked_at or not game_date_iso:
+        return False
+    try:
+        when = datetime.fromisoformat(locked_at)
+    except ValueError:
+        return False
+    return bool(lock_clock(game_date_iso, when)["in_lock_window"])
 
 
 def linescore(game_pk: int) -> dict | None:
@@ -318,10 +391,12 @@ def grade(settle: dict, ls: dict) -> bool | None:
     return None
 
 
-def enrich(payload: dict) -> dict:
+def enrich(payload: dict, *, record_ticks: bool = False) -> dict:
     date_iso = payload["date"]
     settled = ledger.settled_map()
     for g in payload.get("games") or []:
+        clock = lock_clock(g.get("gameDate"))
+        g["lock_clock"] = clock
         ev = poly.fetch_game_event(g["away"]["abbr"], g["home"]["abbr"], date_iso)
         if not ev:
             g["bets"] = []
@@ -329,48 +404,127 @@ def enrich(payload: dict) -> dict:
             g["bets_note"] = "Sin evento Polymarket para este juego."
             continue
         mk = poly.markets(ev)
+        by_mid = {m["id"]: m for m in mk}
         quotes = build_quotes(g, date_iso, mk)
         g["poly_url"] = f"https://polymarket.com/event/{ev.get('slug')}"
-        lockable = can_lock(g.get("status") or "")
         final = is_final(g.get("status") or "")
         ls = linescore(int(g["gamePk"])) if final else None
         out = []
         for q in quotes:
+            q.setdefault("core", False)
+            q["game_date"] = g.get("gameDate")
             pid = q["pick_id"]
+            existing0 = ledger.get_pick(pid)
+            if existing0 and not locked_in_t10(existing0.get("locked_at"), g.get("gameDate")):
+                pid = pid + "#t10"
+                q["pick_id"] = pid
+            if record_ticks:
+                ledger.add_tick(pid, int(g["gamePk"]), q["implied_p"], q["momio_decimal"])
+                mkt = by_mid.get(q.get("market_id") or "")
+                if mkt and (q["take"] or q.get("core")) and ledger.tick_count(pid) < 8:
+                    sel = q["selection"]
+                    token = None
+                    for i, name in enumerate(mkt.get("outcomes") or []):
+                        if name == sel or sel.startswith(name):
+                            toks = mkt.get("tokens") or []
+                            if i < len(toks):
+                                token = toks[i]
+                            break
+                    if token:
+                        for pt in poly.prices_history(token):
+                            ts = datetime.fromtimestamp(pt["t"], tz=timezone.utc).isoformat()
+                            ledger.add_tick(pid, int(g["gamePk"]), pt["p"], momio_decimal(pt["p"]), ts=ts)
+            q["ticks"] = ledger.ticks_for(pid, 40)
             existing = ledger.get_pick(pid)
             if existing:
-                # freeze model/momio; keep live poly as overlay
                 frozen = dict(existing)
                 frozen["live_implied_p"] = q["implied_p"]
                 frozen["live_momio_decimal"] = q["momio_decimal"]
+                frozen["ticks"] = q["ticks"]
+                early = not locked_in_t10(frozen.get("locked_at"), g.get("gameDate"))
+                frozen["void_early"] = early
+                if early:
+                    frozen["status"] = "void-early"
+                    frozen["take"] = False
+                    out.append(frozen)
+                    continue
                 if pid in settled:
                     frozen.update({k: settled[pid][k] for k in settled[pid]})
                 elif final and ls is not None:
                     won = grade(frozen.get("settle") or q["settle"], ls)
                     if won is not None:
-                        graded = ledger.settle_pick(pid, won, {"away": (ls.get("teams") or {}).get("away"), "home": (ls.get("teams") or {}).get("home")})
+                        graded = ledger.settle_pick(
+                            pid,
+                            won,
+                            {"away": (ls.get("teams") or {}).get("away"), "home": (ls.get("teams") or {}).get("home")},
+                        )
                         if graded:
                             frozen = graded
+                            frozen["ticks"] = q["ticks"]
                 else:
                     frozen["status"] = "locked"
                 out.append(frozen)
                 continue
-            if lockable and q["take"]:
+            should_lock = clock["in_lock_window"] and (q["take"] or q.get("core"))
+            if should_lock:
                 frozen = ledger.lock_pick(q)
                 frozen["live_implied_p"] = q["implied_p"]
+                frozen["ticks"] = q["ticks"]
                 out.append(frozen)
                 continue
-            q["status"] = "sin-lock" if not lockable else "live"
-            if not lockable:
-                q["note"] = (q.get("note") or "") + " · no entra al historial (ya empezó o ya terminó)"
+            if clock["too_early"]:
+                q["status"] = "esperando-T-10"
+            else:
+                q["status"] = "sin-lock"
+                q["note"] = (q.get("note") or "") + " · no lock (fuera de T-10)"
             out.append(q)
         g["bets"] = out
-        takes = sum(1 for r in out if r.get("take") or r.get("locked"))
-        g["bets_note"] = (
-            "Lock solo en pregame. Historial append-only, no se reescribe. No hay orden a Polymarket."
-            if takes or out
-            else "Sin quotes."
-        )
-    payload["history"] = ledger.history()
-    payload["history_summary"] = ledger.summary()
+        g["bets_note"] = clock["label"] + ". Un lado por mercado. Ledger append-only. No hay orden a Polymarket."
+    hist = ledger.history()
+    for h in hist:
+        if not locked_in_t10(h.get("locked_at"), h.get("game_date")):
+            h["void_early"] = True
+            if h.get("status") == "locked":
+                h["status"] = "void-early"
+    scored = [h for h in hist if not h.get("void_early") and h.get("status") in {"ganada", "perdida"}]
+    w = sum(1 for h in scored if h.get("won"))
+    pnl = 0.0
+    for h in scored:
+        dec = float(h.get("momio_decimal") or 0)
+        pnl += 100.0 * (dec - 1.0) if h.get("won") else -100.0
+    payload["history"] = hist
+    payload["history_summary"] = {
+        "n_settled": len(scored),
+        "won": w,
+        "lost": len(scored) - w,
+        "hit_rate": round(w / len(scored), 3) if scored else None,
+        "pnl_100mxn": round(pnl, 2),
+        "n_locked": sum(1 for h in hist if h.get("status") == "locked"),
+        "n_void_early": sum(1 for h in hist if h.get("void_early")),
+    }
     return payload
+
+
+LAST_CYCLE: dict = {}
+
+
+def run_cycle() -> dict:
+    from datetime import date as date_cls
+    from mlbproj.engine import mlb_today, project_date
+
+    d0 = date_cls.fromisoformat(mlb_today())
+    n_lock_before = ledger.summary()["n_locked"]
+    dates = [d0.isoformat(), (d0 + timedelta(days=1)).isoformat()]
+    for d in dates:
+        enrich(project_date(d, force=False), record_ticks=True)
+    summary = ledger.summary()
+    LAST_CYCLE.update(
+        {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "dates": dates,
+            "n_locked": summary["n_locked"],
+            "n_settled": summary["n_settled"],
+            "new_locks": summary["n_locked"] - n_lock_before,
+        }
+    )
+    return dict(LAST_CYCLE)

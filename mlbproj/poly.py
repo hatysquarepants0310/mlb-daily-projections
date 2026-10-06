@@ -78,10 +78,10 @@ def event_slugs(away_abbr: str, home_abbr: str, date_iso: str) -> list[str]:
     ]
 
 
-def fetch_event(slug: str) -> dict | None:
+def fetch_event(slug: str, ttl: float | None = None) -> dict | None:
     url = f"{GAMMA}/events?slug={slug}"
     try:
-        data = api.http_json(url, POLY_TTL)
+        data = api.http_json(url, POLY_TTL if ttl is None else ttl)
     except Exception:
         return None
     if isinstance(data, list) and data:
@@ -115,9 +115,30 @@ def markets(ev: dict) -> list[dict]:
                 "slug": m.get("slug") or slug,
                 "outcomes": outcomes,
                 "prices": prices,
+                "tokens": [str(x) for x in _parse_list(m.get("clobTokenIds"))],
                 "closed": bool(m.get("closed") or ev.get("closed")),
                 "url": f"https://polymarket.com/event/{slug}",
                 "event_slug": slug,
             }
         )
+    return out
+
+
+def prices_history(token_id: str, fidelity: int = 3) -> list[dict]:
+    if not token_id:
+        return []
+    url = f"https://clob.polymarket.com/prices-history?market={token_id}&interval=1h&fidelity={fidelity}"
+    try:
+        data = api.http_json(url, 120)
+    except Exception:
+        return []
+    hist = data.get("history") if isinstance(data, dict) else data
+    if not isinstance(hist, list):
+        return []
+    out = []
+    for pt in hist:
+        try:
+            out.append({"t": int(pt["t"]), "p": float(pt["p"])})
+        except (KeyError, TypeError, ValueError):
+            continue
     return out

@@ -137,7 +137,8 @@ async function load(force) {
     el.innerHTML = `<h2>
       <span>${g.away.abbr} @ ${g.home.abbr} <span class="wx">${g.status} · ${g.venue}</span></span>
       <span class="wx">${wx.temp || "?"}°F · ${wx.condition || ""} · ${wx.wind || ""} · HR×${wx.hr_mult ?? ""}</span>
-    </h2>`;
+    </h2>
+    <p class="empty" style="margin:8px 16px">${g.lock_clock?.label || ""} · first pitch ${g.gameDate || "?"}</p>`;
     const pills = document.createElement("div");
     pills.className = "pills";
     (g.pitchers || []).forEach((p) => {
@@ -161,6 +162,11 @@ async function load(force) {
   renderHistory(data);
 }
 
+function spark(ticks) {
+  if (!ticks || !ticks.length) return "—";
+  return ticks.slice(-8).map((t) => Number(t.implied_p).toFixed(2)).join("→");
+}
+
 function betsTable(g) {
   const wrap = document.createElement("div");
   const cap = document.createElement("caption");
@@ -168,12 +174,12 @@ function betsTable(g) {
   const url = g.poly_url ? ` · <a href="${g.poly_url}" target="_blank" rel="noopener">Polymarket</a>` : "";
   tbl.innerHTML = `<caption>Apuestas (momio Poly) — ${g.bets_note || ""}${url}</caption>
   <thead><tr>
-    <th>Mercado</th><th>Lado</th><th>Momio</th><th>Amer</th><th>Poly%</th><th>Modelo</th><th>Edge</th><th>Confiabilidad</th><th>Estado</th>
+    <th>Mercado</th><th>Lado</th><th>Momio</th><th>Amer</th><th>Poly%</th><th>Modelo</th><th>Edge</th><th>Confiabilidad</th><th>Path</th><th>Estado</th>
   </tr></thead><tbody></tbody>`;
   const tb = tbl.tBodies[0];
   for (const b of g.bets || []) {
     const tr = document.createElement("tr");
-    if (b.take || b.locked) tr.className = "take";
+    if ((b.take || b.core || b.locked) && b.status !== "void-early") tr.className = "take";
     const st = b.status || "live";
     const stClass = st === "ganada" ? "won" : st === "perdida" ? "lost" : "";
     const cells = [
@@ -185,12 +191,13 @@ function betsTable(g) {
       fmt(100 * b.model_p, 1) + "%",
       (b.edge >= 0 ? "+" : "") + fmt(100 * b.edge, 1) + " pp",
       fmt(b.reliability, 1),
+      spark(b.ticks),
       st,
     ];
     cells.forEach((t, i) => {
       const td = document.createElement("td");
       td.textContent = t;
-      if (i === 8) td.className = stClass;
+      if (i === 9) td.className = stClass;
       tr.appendChild(td);
     });
     tb.appendChild(tr);

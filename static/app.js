@@ -176,7 +176,7 @@ function spark(ticks) {
 
 function betsTable(g) {
   const wrap = document.createElement("div");
-  const bets = (g.bets || []).filter((b) => b.take && b.status !== "void-early" && !b.void_early);
+  const bets = (g.bets || []).filter((b) => !b.void_early && b.status !== "void-early");
   if (!bets.length) {
     const p = document.createElement("p");
     p.className = "empty";
@@ -193,8 +193,8 @@ function betsTable(g) {
   const tb = tbl.tBodies[0];
   for (const b of bets) {
     const tr = document.createElement("tr");
-    tr.className = "take";
     const st = b.status || "live";
+    if (b.take && !st.includes("ganada") && !st.includes("perdida")) tr.className = "take";
     const stClass = st.includes("ganada") || st.includes("ganado") ? "won" : (st.includes("perdida") || st.includes("perdido") ? "lost" : "");
     const cells = [
       b.note || b.kind,

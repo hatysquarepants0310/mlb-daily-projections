@@ -129,8 +129,19 @@ def p_yrfi(game: dict) -> float | None:
     return max(0.05, min(0.95, 1.0 - (1.0 - pa) * (1.0 - ph)))
 
 
+def graded_rows(rows: list[dict]) -> list[dict]:
+    """Locks de T-10 ya liquidados. Void-early no cuenta."""
+    kept = []
+    for r in rows:
+        if r.get("void_early"):
+            continue
+        if (r.get("status") or "") in {"ganada", "perdida"}:
+            kept.append(r)
+    return kept
+
+
 def open_takes(rows: list[dict]) -> list[dict]:
-    """Lo que se muestra para apostar. Core, void-early y juegos ya cerrados no."""
+    """Lo que se muestra para apostar. Cerrados y void-early no."""
     kept = []
     for r in rows:
         if not r.get("take") or r.get("void_early"):
@@ -612,18 +623,38 @@ def enrich(payload: dict, *, record_ticks: bool = False) -> dict:
                 if won is not None:
                     ledger.settle_pick(pid, won, actual)
         shown = open_takes(out)
-        g["bets"] = shown
         if shown:
+            g["bets"] = shown
             g["bets_note"] = (
                 clock["label"]
                 + ". Lado del modelo. El edge contra Poly no filtra. Caliente lo comparas tú."
             )
+        elif final:
+            shown = graded_rows(out)
+            seen = {r.get("pick_id") for r in shown}
+            for h in ledger.history():
+                if int(h.get("game_pk") or 0) != int(g["gamePk"]):
+                    continue
+                if h.get("pick_id") in seen:
+                    continue
+                if not locked_in_t10(h.get("locked_at"), g.get("gameDate")):
+                    continue
+                if h.get("status") in {"ganada", "perdida"}:
+                    shown.append(h)
+            g["bets"] = shown
+            g["bets_note"] = (
+                "Cerrado. Esto es lo que se lockeó en T-10, no una apuesta nueva."
+                if shown
+                else "Cerrado. No hubo lock en T-10."
+            )
         elif not (g.get("inputs") or {}).get("ready"):
+            g["bets"] = []
             g["bets_note"] = "Sin apuesta. " + (
                 (g.get("inputs") or {}).get("label") or "Esperando foquito verde."
             )
         else:
-            g["bets_note"] = "Sin apuesta. Ningún lado deja edge real contra Poly."
+            g["bets"] = []
+            g["bets_note"] = "Sin apuesta. El modelo no se inclina a ningún lado."
     hist = ledger.history()
     for h in hist:
         if not locked_in_t10(h.get("locked_at"), h.get("game_date")):

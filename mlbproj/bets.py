@@ -12,6 +12,19 @@ PX_LO = 0.18
 PX_HI = 0.82
 SHRINK = 0.70
 MIN_EDGE = 0.03
+MIN_EDGE_THIN = 0.08  # total / 1ra / -1.5: sin calibrar, hace falta un desacuerdo real
+# Tasa larga de carrera en la 1ra (cualquier equipo). ~51.4% en 61,579 juegos
+# 2000–2025 (Retrosheet, vía mlbprops). No es un parámetro ajustado a ayer.
+LEAGUE_YRFI = 0.514
+# λ por equipo que implica LEAGUE_YRFI si ambos lados son promedio e independientes:
+# 1-(1-p)^2 = 0.514 → p = 0.303 → λ = -ln(0.697) = 0.361
+LEAGUE_1ST_LAMBDA = 0.361
+LEAGUE_RA9 = 4.40
+LEAGUE_WOBA = 0.315
+LEAGUE_MU = 8.6
+TOTAL_DISP = 1.55  # var/mean. Totales MLB están sobredispersos vs Poisson. No está ajustado.
+TOTAL_PRIOR_BAND = 1.0  # carreras. Dentro de esto, el total es el prior de liga, no un pick.
+ML_MIN_GAP = 0.30
 LOCK_BEFORE = timedelta(minutes=10)
 FINAL = {"final", "game over", "completed"}
 
@@ -44,10 +57,93 @@ def poisson_cdf(k: int, lam: float) -> float:
     return sum(poisson_pmf(i, lam) for i in range(0, k + 1))
 
 
-def p_over(line: float, mu: float) -> float:
-    # O/U 6.5 → P(total >= 7)
+def p_over(line: float, mu: float, disp: float = TOTAL_DISP) -> float:
+    """P(total > line). disp=1 es Poisson; MLB usa var/mean > 1, que baja P(over) si μ > line."""
     need = math.floor(line) + 1
-    return max(0.01, min(0.99, 1.0 - poisson_cdf(need - 1, mu)))
+    mu = max(mu, 0.05)
+    if disp <= 1.01:
+        return max(0.01, min(0.99, 1.0 - poisson_cdf(need - 1, mu)))
+    r = mu / (disp - 1.0)
+    cdf = 0.0
+    for k in range(need):
+        logp = (
+            math.lgamma(k + r) - math.lgamma(r) - math.lgamma(k + 1)
+            + r * math.log(r / (r + mu))
+            + k * math.log(mu / (r + mu))
+        )
+        cdf += math.exp(logp)
+    return max(0.01, min(0.99, 1.0 - cdf))
+
+
+def _sp_factor(sp: dict | None) -> float | None:
+    """RA9 y xwOBA del abridor vs liga. None si no es abridor de verdad."""
+    if not sp:
+        return None
+    ip = float(sp.get("ip") or 0)
+    if ip < 3 or sp.get("role") == "RP":
+        return None
+    ra9 = float(sp.get("er") or 0) / ip * 9.0
+    f_ra = ra9 / LEAGUE_RA9
+    xw = sp.get("xwoba_against")
+    if xw:
+        return 0.40 * f_ra + 0.60 * (float(xw) / LEAGUE_WOBA)
+    return f_ra
+
+
+def _top3_factor(game: dict, team: str) -> float | None:
+    top = [
+        b for b in game.get("batters") or []
+        if b.get("team") == team and int(b.get("slot") or 99) <= 3 and b.get("woba")
+    ]
+    if len(top) < 3:
+        return None
+    w = sum(float(b["woba"]) for b in top) / 3.0
+    return w / LEAGUE_WOBA
+
+
+def _pitcher_by_team(game: dict, team: str) -> dict | None:
+    for p in game.get("pitchers") or []:
+        if p.get("team") == team:
+            return p
+    return None
+
+
+def p_yrfi(game: dict) -> float | None:
+    """P(carrera en la 1ra). Cada lado: λ de liga × calidad del abridor rival × top 3.
+
+    El abridor local enfrenta el top 3 visitante, y al revés. Sin los dos abridores
+    y sin top 3, no hay precio: no se inventa 1-exp(-μ/8.2).
+    """
+    away = (game.get("away") or {}).get("abbr")
+    home = (game.get("home") or {}).get("abbr")
+    if not away or not home:
+        return None
+    f_hs = _sp_factor(_pitcher_by_team(game, home))
+    f_as = _sp_factor(_pitcher_by_team(game, away))
+    f_ab = _top3_factor(game, away)
+    f_hb = _top3_factor(game, home)
+    if f_hs is None or f_as is None or f_ab is None or f_hb is None:
+        return None
+    la = LEAGUE_1ST_LAMBDA * f_hs * f_ab
+    lh = LEAGUE_1ST_LAMBDA * f_as * f_hb
+    pa = 1.0 - math.exp(-max(la, 0.02))
+    ph = 1.0 - math.exp(-max(lh, 0.02))
+    return max(0.05, min(0.95, 1.0 - (1.0 - pa) * (1.0 - ph)))
+
+
+def open_takes(rows: list[dict]) -> list[dict]:
+    """Lo que se muestra para apostar. Core, void-early y juegos ya cerrados no."""
+    kept = []
+    for r in rows:
+        if not r.get("take") or r.get("void_early"):
+            continue
+        st = r.get("status") or ""
+        if st in {"ganada", "perdida", "void-early"}:
+            continue
+        if "hubiera" in st or st.startswith("sin-lock"):
+            continue
+        kept.append(r)
+    return kept
 
 
 def p_win(ra: float, rh: float, away: bool) -> float:
@@ -283,8 +379,9 @@ def build_quotes(game: dict, date_iso: str, markets: list[dict]) -> list[dict]:
                     )
                 )
         elif smt == "nrfi":
-            p_yes = 1.0 - math.exp(-mu / 8.2)
-            p_yes = max(0.15, min(0.75, p_yes))
+            p_yes = p_yrfi(game)
+            if p_yes is None:
+                continue
             for i, name in enumerate(m["outcomes"]):
                 side = "yes" if name.lower().startswith("yes") else "no"
                 mp = p_yes if side == "yes" else 1.0 - p_yes
@@ -299,26 +396,34 @@ def build_quotes(game: dict, date_iso: str, markets: list[dict]) -> list[dict]:
                         kind="nrfi",
                         settle={"kind": "nrfi", "side": side},
                         take=False,
-                        note="run in 1st",
+                        note="1ra · abridor vs top 3",
                         conf=conf,
                     )
                 )
 
-    # mark at most one take per kind: best edge in-band, model_shrunk>=0.52, edge>=MIN_EDGE
+    ready = bool((game.get("inputs") or {}).get("ready"))
     by_kind: dict[str, list[int]] = {}
     for i, r in enumerate(rows):
         by_kind.setdefault(r["kind"], []).append(i)
     for kind, idxs in by_kind.items():
         ranked = sorted(idxs, key=lambda i: rows[i]["edge"], reverse=True)
+        bar = MIN_EDGE if kind == "ml" else MIN_EDGE_THIN
         for i in ranked:
             r = rows[i]
-            if r["in_band"] and r["model_shrunk"] >= 0.52 and r["edge"] >= MIN_EDGE:
+            if not ready:
+                continue
+            if kind == "ml" and abs(ra - rh) < ML_MIN_GAP:
+                continue
+            if kind == "total" and abs(mu - LEAGUE_MU) < TOTAL_PRIOR_BAND:
+                continue
+            if r["in_band"] and r["model_shrunk"] >= 0.52 and r["edge"] >= bar:
                 r["take"] = True
                 break
-    ml = [i for i, r in enumerate(rows) if r["kind"] == "ml" and r["in_band"]]
-    if ml:
-        best = max(ml, key=lambda i: rows[i]["model_p"])
-        rows[best]["core"] = True
+    if ready:
+        ml = [i for i, r in enumerate(rows) if r["kind"] == "ml" and r["in_band"]]
+        if ml:
+            best = max(ml, key=lambda i: rows[i]["model_p"])
+            rows[best]["core"] = True
     return unique_picks(rows)
 
 
@@ -427,7 +532,7 @@ def enrich(payload: dict, *, record_ticks: bool = False) -> dict:
             if record_ticks:
                 ledger.add_tick(pid, int(g["gamePk"]), q["implied_p"], q["momio_decimal"])
                 mkt = by_mid.get(q.get("market_id") or "")
-                if mkt and (q["take"] or q.get("core")) and ledger.tick_count(pid) < 8:
+                if mkt and q.get("take") and ledger.tick_count(pid) < 8:
                     sel = q["selection"]
                     token = None
                     for i, name in enumerate(mkt.get("outcomes") or []):
@@ -471,7 +576,7 @@ def enrich(payload: dict, *, record_ticks: bool = False) -> dict:
                     frozen["status"] = "locked"
                 out.append(frozen)
                 continue
-            should_lock = clock["in_lock_window"] and (q["take"] or q.get("core"))
+            should_lock = clock["in_lock_window"] and bool(q.get("take"))
             if should_lock:
                 frozen = ledger.lock_pick(q)
                 frozen["live_implied_p"] = q["implied_p"]
@@ -492,8 +597,36 @@ def enrich(payload: dict, *, record_ticks: bool = False) -> dict:
                         q["paper"] = "perdida"
                         q["status"] = "sin-lock · hubiera perdido"
             out.append(q)
-        g["bets"] = out
-        g["bets_note"] = clock["label"] + ". Un lado por mercado. Ledger append-only. No hay orden a Polymarket."
+        seen = {r.get("pick_id") for r in out}
+        if final and ls is not None:
+            actual = {
+                "away": (ls.get("teams") or {}).get("away"),
+                "home": (ls.get("teams") or {}).get("home"),
+            }
+            for h in ledger.history():
+                if int(h.get("game_pk") or 0) != int(g["gamePk"]):
+                    continue
+                pid = h.get("pick_id")
+                if not pid or pid in seen or pid in settled:
+                    continue
+                if not locked_in_t10(h.get("locked_at"), g.get("gameDate")):
+                    continue
+                won = grade(h.get("settle") or {}, ls)
+                if won is not None:
+                    ledger.settle_pick(pid, won, actual)
+        shown = open_takes(out)
+        g["bets"] = shown
+        if shown:
+            g["bets_note"] = (
+                clock["label"]
+                + ". Solo takes con foquito verde. Edge contra Poly. Caliente lo comparas tú."
+            )
+        elif not (g.get("inputs") or {}).get("ready"):
+            g["bets_note"] = "Sin apuesta. " + (
+                (g.get("inputs") or {}).get("label") or "Esperando foquito verde."
+            )
+        else:
+            g["bets_note"] = "Sin apuesta. Ningún lado deja edge real contra Poly."
     hist = ledger.history()
     for h in hist:
         if not locked_in_t10(h.get("locked_at"), h.get("game_date")):

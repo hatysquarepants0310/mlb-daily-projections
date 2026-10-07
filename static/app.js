@@ -176,17 +176,24 @@ function spark(ticks) {
 
 function betsTable(g) {
   const wrap = document.createElement("div");
-  const cap = document.createElement("caption");
+  const bets = (g.bets || []).filter((b) => b.take && b.status !== "void-early" && !b.void_early);
+  if (!bets.length) {
+    const p = document.createElement("p");
+    p.className = "empty";
+    p.textContent = g.bets_note || "Sin apuesta.";
+    wrap.appendChild(p);
+    return wrap;
+  }
   const tbl = document.createElement("table");
   const url = g.poly_url ? ` · <a href="${g.poly_url}" target="_blank" rel="noopener">Polymarket</a>` : "";
-  tbl.innerHTML = `<caption>Apuestas (momio Poly) — ${g.bets_note || ""}${url}</caption>
+  tbl.innerHTML = `<caption>Apuestas — ${g.bets_note || ""}${url}</caption>
   <thead><tr>
     <th>Mercado</th><th>Lado</th><th>Momio</th><th>Amer</th><th>Poly%</th><th>Modelo</th><th>Edge</th><th>Confiabilidad</th><th>Path</th><th>Estado</th>
   </tr></thead><tbody></tbody>`;
   const tb = tbl.tBodies[0];
-  for (const b of g.bets || []) {
+  for (const b of bets) {
     const tr = document.createElement("tr");
-    if ((b.take || b.core || b.locked) && b.status !== "void-early") tr.className = "take";
+    tr.className = "take";
     const st = b.status || "live";
     const stClass = st.includes("ganada") || st.includes("ganado") ? "won" : (st.includes("perdida") || st.includes("perdido") ? "lost" : "");
     const cells = [
@@ -208,13 +215,6 @@ function betsTable(g) {
       tr.appendChild(td);
     });
     tb.appendChild(tr);
-  }
-  if (!(g.bets || []).length) {
-    const p = document.createElement("p");
-    p.className = "empty";
-    p.textContent = g.bets_note || "Sin apuestas Poly.";
-    wrap.appendChild(p);
-    return wrap;
   }
   wrap.appendChild(tbl);
   return wrap;

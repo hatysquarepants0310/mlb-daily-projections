@@ -47,7 +47,7 @@ Slug de juego, no `tag_id`. El tag de temporada (WS / MVP) no es este board.
 GET https://gamma-api.polymarket.com/events?slug=mlb-{away}-{home}-{YYYY-MM-DD}
 ```
 
-Mercados: ML, total, spread, 1ra entrada. El tablero solo muestra takes. Hace falta foquito verde. ML: shrunk `≥0.52`, edge `≥3pp`, y las carreras de los dos equipos separadas por `≥0.30`. Total, 1ra y −1.5: edge `≥8pp`. El total no se toma si μ está a menos de 1 carrera del prior 8.6. La 1ra usa los dos abridores contra el top 3; si falta un abridor de verdad, no hay precio. `core` no es apuesta y no se lockea.
+Mercados: ML, total, spread, 1ra entrada. El tablero solo muestra el lado que el modelo se inclina a ganar (shrunk `≥0.52`), con foquito verde. No hay filtro de edge contra Poly: da igual si el momio está arriba o abajo. ML además pide que las carreras de los dos equipos se separen por `≥0.30`. El total no se toma si μ está a menos de 1 carrera del prior 8.6. La 1ra usa los dos abridores contra el top 3; si falta un abridor de verdad, no hay precio. `core` no es apuesta y no se lockea.
 
 Al Final, el linescore de MLB liquida una sola vez. INSERT only. Un segundo grade es no-op. Triggers abortan `UPDATE`/`DELETE` en `picks`, `settled` y `ticks`. Un lock fuera de T-10 se queda en disco como `void-early` y no cuenta en hit rate / PnL. Borrarlo para “limpiar” el eval rompe el contrato.
 

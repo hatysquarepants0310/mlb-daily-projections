@@ -2,14 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from mlbproj.bets import (
-    LEAGUE_YRFI,
-    ML_MIN_GAP,
-    build_quotes,
-    p_over,
-    p_yrfi,
-    shrink,
-)
+from mlbproj.bets import LEAGUE_YRFI, ML_MIN_GAP, build_quotes, p_over, p_yrfi
 
 
 def _batter(team: str, slot: int, woba: float, runs: float) -> dict:
@@ -127,10 +120,10 @@ class TakeGateTests(unittest.TestCase):
         )
         self.assertGreater(abs(4.37 - 3.99), ML_MIN_GAP)
         rows = build_quotes(g, "2026-10-06", _markets(yes=0.39, over=0.52, away_ml=0.50))
-        nrfi = [r for r in rows if r["kind"] == "nrfi"]
-        self.assertTrue(nrfi)
-        self.assertFalse(any(r.get("take") for r in nrfi))
-        self.assertLess(shrink(p_yrfi(g)), 0.39 + 0.08)
+        nrfi = [r for r in rows if r["kind"] == "nrfi" and r.get("take")]
+        self.assertEqual(len(nrfi), 1)
+        self.assertTrue(nrfi[0]["selection"].lower().startswith("no"))
+        self.assertLess(nrfi[0]["edge"], 0.08)
 
     def test_bad_starters_can_take_yes(self):
         g = _game(
@@ -176,6 +169,21 @@ class TakeGateTests(unittest.TestCase):
         takes = [r for r in build_quotes(wide, "2026-10-07", cheap) if r["kind"] == "ml" and r.get("take")]
         self.assertEqual(len(takes), 1)
         self.assertIn("Dodgers", takes[0]["selection"])
+
+    def test_negative_poly_edge_still_shows_model_side(self):
+        g = _game(
+            ready=True,
+            away_r=5.4,
+            home_r=3.6,
+            away_sp=_sp("LAD", 2.2, xw=0.270),
+            home_sp=_sp("ATL", 3.4, xw=0.340),
+        )
+        # Poly ya tiene a LAD de favorito fuerte: edge negativo, igual se muestra.
+        rows = build_quotes(g, "2026-10-07", _markets(yes=0.50, over=0.55, away_ml=0.70))
+        takes = [r for r in rows if r["kind"] == "ml" and r.get("take")]
+        self.assertEqual(len(takes), 1)
+        self.assertIn("Dodgers", takes[0]["selection"])
+        self.assertLess(takes[0]["edge"], 0)
 
 
 if __name__ == "__main__":

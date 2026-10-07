@@ -11,8 +11,6 @@ from mlbproj.config import MLB_API
 PX_LO = 0.18
 PX_HI = 0.82
 SHRINK = 0.70
-MIN_EDGE = 0.03
-MIN_EDGE_THIN = 0.08  # total / 1ra / -1.5: sin calibrar, hace falta un desacuerdo real
 # Tasa larga de carrera en la 1ra (cualquier equipo). ~51.4% en 61,579 juegos
 # 2000–2025 (Retrosheet, vía mlbprops). No es un parámetro ajustado a ayer.
 LEAGUE_YRFI = 0.514
@@ -406,8 +404,7 @@ def build_quotes(game: dict, date_iso: str, markets: list[dict]) -> list[dict]:
     for i, r in enumerate(rows):
         by_kind.setdefault(r["kind"], []).append(i)
     for kind, idxs in by_kind.items():
-        ranked = sorted(idxs, key=lambda i: rows[i]["edge"], reverse=True)
-        bar = MIN_EDGE if kind == "ml" else MIN_EDGE_THIN
+        ranked = sorted(idxs, key=lambda i: rows[i]["model_shrunk"], reverse=True)
         for i in ranked:
             r = rows[i]
             if not ready:
@@ -416,7 +413,7 @@ def build_quotes(game: dict, date_iso: str, markets: list[dict]) -> list[dict]:
                 continue
             if kind == "total" and abs(mu - LEAGUE_MU) < TOTAL_PRIOR_BAND:
                 continue
-            if r["in_band"] and r["model_shrunk"] >= 0.52 and r["edge"] >= bar:
+            if r["model_shrunk"] >= 0.52:
                 r["take"] = True
                 break
     if ready:
@@ -619,7 +616,7 @@ def enrich(payload: dict, *, record_ticks: bool = False) -> dict:
         if shown:
             g["bets_note"] = (
                 clock["label"]
-                + ". Solo takes con foquito verde. Edge contra Poly. Caliente lo comparas tú."
+                + ". Lado del modelo. El edge contra Poly no filtra. Caliente lo comparas tú."
             )
         elif not (g.get("inputs") or {}).get("ready"):
             g["bets_note"] = "Sin apuesta. " + (
